@@ -310,8 +310,7 @@ func (d *decoder) readBody() error {
 				return d.parseTrailer(line)
 			}
 			// decode
-			lineBytes := []byte(line)
-			b := d.decode(lineBytes)
+			b := d.decode([]byte(line))
 			if Debug2 {
 				log.Printf("yenc.decoder readBody i=%d/d.dat=%d len(line)=%d got len(b)=%d", i, len(d.dat), len(line), len(b))
 			}
