@@ -270,12 +270,16 @@ func (d *decoder) readBody() error {
 		for {
 			line, err := d.buf.ReadBytes('\n')
 			if err != nil {
+				log.Printf("Error in yenc.decoder.readBody d.buf.ReadBytes err='%v'", err)
 				return err
 			}
 			// strip linefeeds (some use CRLF some LF)
 			line = bytes.TrimRight(line, "\r\n")
 			// check for =yend
 			if len(line) >= 5 && string(line[:5]) == "=yend" {
+				if Debug1 {
+					log.Printf("yenc.decoder d.buf =yend d.part.Body=%d", len(d.part.Body))
+				}
 				return d.parseTrailer(string(line))
 			}
 			// decode
@@ -288,21 +292,36 @@ func (d *decoder) readBody() error {
 		}
 	} else
 	if d.dat != nil {
-		if Debug1 {}
-		log.Printf("yenc.decoder readBody d.dat=%d", len(d.dat))
+		if Debug1 {
+			log.Printf("yenc.decoder readBody lines d.dat=%d", len(d.dat))
+		}
 		for i, line := range d.dat {
+			if len(line) == 0 {
+				continue
+			}
+			// Skip yenc headers or metadata lines
+			if strings.HasPrefix(line, "=ybegin") || strings.HasPrefix(line, "=ypart") {
+				continue
+			}
 			if len(line) >= 5 && string(line[:5]) == "=yend" {
+				if Debug2 {
+					log.Printf("yenc.decoder d.dat =yend d.part.Body=%d", len(d.part.Body))
+				}
 				return d.parseTrailer(line)
 			}
 			// decode
-			b := d.decode([]byte(line))
-			log.Printf("yenc.decoder readBody i=%d d.dat=%d len(b)=%d len(line)=%d", i, len(d.dat), len(b), len(line))
+			lineBytes := []byte(line)
+			b := d.decode(lineBytes)
+			if Debug2 {
+				log.Printf("yenc.decoder readBody i=%d/d.dat=%d len(line)=%d got len(b)=%d", i, len(d.dat), len(line), len(b))
+			}
 			// update hashs
 			d.part.crcHash.Write(b)
 			d.crcHash.Write(b)
 			// decode
 			d.part.Body = append(d.part.Body, b...)
 		}
+
 	}
 	return fmt.Errorf("Error unexpected EOF in yenc.decoder.readBody")
 }
@@ -339,13 +358,15 @@ func (d *decoder) run() error {
 			log.Printf("yenc.decoder.run: #3 done d.readBody @Number=%d", d.part.Number)
 		}
 
+		// add part to list
+		d.parts = append(d.parts, d.part)
+
 		// validate part
 		if err := d.part.validate(); err != nil {
 			log.Printf("Error yenc.decoder.run: validate @Number=%d err='%v'", d.part.Number, err)
 			return err
 		}
-		// add part to list
-		d.parts = append(d.parts, d.part)
+
 		if Debug2 {
 			log.Printf("yenc.decoder.run: #4 done d.validate @Number=%d parts=%d", d.part.Number, len(d.parts))
 		}
@@ -357,21 +378,21 @@ func (d *decoder) run() error {
 func DecodeSlice(input []string) (part *Part, err error) {
 	d := &decoder{dat: input}
 	if err = d.run(); err != nil && err != io.EOF {
-		log.Printf("Error in yenc.Decode #1 err='%v'", err)
+		log.Printf("Error in yenc.DecodeSlice #1 err='%v'", err)
 		return nil, err
 	}
 	if len(d.parts) == 0 {
-		log.Printf("Error in yenc.Decode #2 'len(d.parts) == 0' err='%v'", err)
+		log.Printf("Error in yenc.DecodeSlice #2 'len(d.parts) == 0' err='%v'", err)
 		return nil, fmt.Errorf("no yenc parts found")
 	}
 	// validate multipart only if all parts are present
 	//if !d.multipart || len(d.parts) == d.parts[len(d.parts)-1].Number { //  ?????????
 	if d.multipart && len(d.parts) > 1 && len(d.parts) == d.parts[len(d.parts)-1].Number {
 		if Debug1 {
-			log.Printf("yenc.Decode d.validate() d.multipart=%t parts=%d", d.multipart, len(d.parts))
+			log.Printf("yenc.DecodeSlice d.validate() d.multipart=%t parts=%d", d.multipart, len(d.parts))
 		}
 		if err := d.validate(); err != nil {
-			log.Printf("Error in yenc.Decode #3 d.validate err='%v'", err)
+			log.Printf("Error in yenc.DecodeSlice #3 d.validate err='%v'", err)
 			return nil, err
 		}
 	}
@@ -379,7 +400,7 @@ func DecodeSlice(input []string) (part *Part, err error) {
 		d.parts[0].Total = d.total
 	}
 	if Debug1 {
-		log.Printf("OK yenc.Decode return yPart.Number=%d Body=%d parts=%d", d.parts[0].Number, len(d.parts[0].Body), len(d.parts))
+		log.Printf("OK yenc.DecodeSlice return yPart.Number=%d Body=%d parts=%d", d.parts[0].Number, len(d.parts[0].Body), len(d.parts))
 	}
 	return d.parts[0], nil
 } // end func DecodeSlice
@@ -391,7 +412,7 @@ func Decode(input io.Reader) (part *Part, err error) {
 		return nil, err
 	}
 	if len(d.parts) == 0 {
-		log.Printf("Error in yenc.Decode #2 'len(d.parts) == 0' err='%v'", err)
+		log.Printf("Error in yenc.Decode #2 'len(d.parts) == 0' err='%#v'", err)
 		return nil, fmt.Errorf("no yenc parts found")
 	}
 	// validate multipart only if all parts are present
