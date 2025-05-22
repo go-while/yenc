@@ -1,6 +1,6 @@
-// Package yenc
-// Decoder for yenc encoded binaries (yenc.org)
-// modded from github.com/chrisfarms/yenc
+// another yenc decoder (experimental/testing)
+// modded from: github.com/chrisfarms/yenc
+// to be used in NZBreX (nzbrefreshX)
 package yenc
 
 import (
@@ -18,7 +18,7 @@ import (
 var (
 	Debug1 = false
 	Debug2 = false
-	Debug3 = true
+	Debug3 = false
 )
 
 func ParseHeaders(inputBytes []byte) map[string]string {
@@ -86,18 +86,9 @@ func (p *Part) validate() error {
 	return fmt.Errorf("Error in yenc.Part.validate: p.Crc32 not set")
 }
 
-func NewDecoder(in1 []byte, in2 []string) *Decoder {
-	var decoder Decoder
-	if in1 != nil {
-		decoder.Buf = bufio.NewReader(bytes.NewReader(in1))
-	}
-	if in2 != nil {
-		decoder.Dat = in2
-	}
-	return &decoder
-} // end func yenc.NewDecoder(in1, in2)
-
 type Decoder struct {
+	// set <= 0 if unknown or any number but mostly only 1!
+	toCheck int64
 	// the buffered input
 	Buf *bufio.Reader
 	// alternative input as []string
@@ -116,6 +107,23 @@ type Decoder struct {
 	// are we waiting for an escaped char
 	awaitingSpecial bool
 }
+
+// you should supply only one: ior or in1 or in2!
+// toCheck should be <= 0 if unknown or any number but mostly only 1!
+func NewDecoder(ior io.Reader, in1 []byte, in2 []string, toCheck int64) *Decoder {
+	var decoder Decoder
+	if ior != nil {
+		decoder.Buf = bufio.NewReader(ior)
+	} else
+	if in1 != nil {
+		decoder.Buf = bufio.NewReader(bytes.NewReader(in1))
+	} else
+	if in2 != nil {
+		decoder.Dat = in2
+	}
+	decoder.toCheck = toCheck
+	return &decoder
+} // end func yenc.NewDecoder(in1, in2)
 
 func (d *Decoder) validate() error {
 	if Debug1 {
@@ -340,6 +348,7 @@ func (d *Decoder) run() error {
 	// init hash
 	d.crcHash = crc32.NewIEEE()
 	// for each part
+	var checked int64 = 0
 	for {
 		// create a part
 		d.part = new(Part)
@@ -386,16 +395,15 @@ func (d *Decoder) run() error {
 			log.Printf("yenc.Decoder.run: #4 done d.validate @Number=%d parts=%d", d.part.Number, len(d.parts))
 		}
 
-		if d.Dat != nil {
+		checked++
+		if d.toCheck > 0 && checked == d.toCheck {
 			break
 		}
 	}
 	return nil
-}
+} // end func d.run()
 
 // return a single part from yenc data
-// func DecodeSlice(input []string) (part *Part, err error) {
-
 func (d *Decoder) DecodeSlice() (part *Part, err error) {
 	//d := &Decoder{dat: input}
 	if err = d.run(); err != nil && err != io.EOF {
@@ -409,7 +417,7 @@ func (d *Decoder) DecodeSlice() (part *Part, err error) {
 	// validate multipart only if all parts are present
 	//if !d.multipart || len(d.parts) == d.parts[len(d.parts)-1].Number { //  ?????????
 	if d.multipart && len(d.parts) > 1 && len(d.parts) == d.parts[len(d.parts)-1].Number {
-		if Debug1 {
+		if Debug3 {
 			log.Printf("yenc.DecodeSlice d.validate() d.multipart=%t parts=%d", d.multipart, len(d.parts))
 		}
 		if err := d.validate(); err != nil {
@@ -420,13 +428,10 @@ func (d *Decoder) DecodeSlice() (part *Part, err error) {
 	if d.total > 0 {
 		d.parts[0].Total = d.total
 	}
-	if Debug1 {
+	if Debug3 {
 		log.Printf("OK yenc.DecodeSlice return yPart.Number=%d Body=%d parts=%d", d.parts[0].Number, len(d.parts[0].Body), len(d.parts))
 	}
-	part = d.parts[0]
-	d.parts = nil
-	d = nil
-	return part, nil
+	return d.parts[0], nil
 } // end func DecodeSlice
 
 func (d *Decoder) Decode() (part *Part, err error) {
@@ -442,7 +447,7 @@ func (d *Decoder) Decode() (part *Part, err error) {
 	// validate multipart only if all parts are present
 	//if !d.multipart || len(d.parts) == d.parts[len(d.parts)-1].Number { //  ?????????
 	if d.multipart && len(d.parts) > 1 && len(d.parts) == d.parts[len(d.parts)-1].Number {
-		if Debug1 {
+		if Debug3 {
 			log.Printf("yenc.Decode d.validate() d.multipart=%t parts=%d", d.multipart, len(d.parts))
 		}
 		if err := d.validate(); err != nil {
@@ -453,11 +458,8 @@ func (d *Decoder) Decode() (part *Part, err error) {
 	if d.total > 0 {
 		d.parts[0].Total = d.total
 	}
-	if Debug1 {
+	if Debug3 {
 		log.Printf("OK yenc.Decode return yPart.Number=%d Body=%d parts=%d", d.parts[0].Number, len(d.parts[0].Body), len(d.parts))
 	}
-	part = d.parts[0]
-	d.parts = nil
-	d = nil
-	return part, nil
+	return d.parts[0], nil
 } // end func Decode
