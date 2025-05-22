@@ -39,7 +39,7 @@ type Part struct {
 	// part num
 	Number int
 	// size from header
-	hsize int64
+	HeaderSize int64
 	// size from part trailer
 	Size int64
 	// file boundarys
@@ -48,8 +48,10 @@ type Part struct {
 	Name string
 	// line length of part
 	cols int
+	// numer of parts if given
+	Total int
 	// crc check for this part
-	crc32   uint32
+	Crc32   uint32
 	crcHash hash.Hash32
 	// the decoded data
 	Body []byte
@@ -61,9 +63,9 @@ func (p *Part) validate() error {
 		return fmt.Errorf("Body size %d did not match expected size %d", len(p.Body), p.Size)
 	}
 	// crc check
-	if p.crc32 > 0 {
-		if sum := p.crcHash.Sum32(); sum != p.crc32 {
-			return fmt.Errorf("crc check failed for part %d expected %x got %x", p.Number, p.crc32, sum)
+	if p.Crc32 > 0 {
+		if sum := p.crcHash.Sum32(); sum != p.Crc32 {
+			return fmt.Errorf("crc check failed for part %d expected %x got %x", p.Number, p.Crc32, sum)
 		}
 	}
 	return nil
@@ -122,7 +124,7 @@ func (d *decoder) readHeader() (err error) {
 		}
 		switch kv[0] {
 		case "size":
-			d.part.hsize, _ = strconv.ParseInt(kv[1], 10, 64)
+			d.part.HeaderSize, _ = strconv.ParseInt(kv[1], 10, 64)
 		case "line":
 			d.part.cols, _ = strconv.Atoi(kv[1])
 		case "part":
@@ -177,7 +179,7 @@ func (d *decoder) parseTrailer(line string) error {
 			d.part.Size, _ = strconv.ParseInt(kv[1], 10, 64)
 		case "pcrc32":
 			if crc64, err := strconv.ParseUint(kv[1], 16, 64); err == nil {
-				d.part.crc32 = uint32(crc64)
+				d.part.Crc32 = uint32(crc64)
 			}
 		case "crc32":
 			if crc64, err := strconv.ParseUint(kv[1], 16, 64); err == nil {
@@ -216,7 +218,7 @@ func (d *decoder) decode(line []byte) []byte {
 }
 
 func (d *decoder) readBody() error {
-	// ready the part body 
+	// ready the part body
 	d.part.Body = make([]byte, 0)
 	// reset special
 	d.awaitingSpecial = false
@@ -242,7 +244,7 @@ func (d *decoder) readBody() error {
 		// decode
 		d.part.Body = append(d.part.Body, b...)
 	}
-	return nil
+	return fmt.Errorf("Error unexpected EOF in yenc.decoder.readBody")
 }
 
 func (d *decoder) run() error {
@@ -266,12 +268,12 @@ func (d *decoder) run() error {
 		if err := d.readBody(); err != nil {
 			return err
 		}
-		// add part to list
-		d.parts = append(d.parts, d.part)
 		// validate part
 		if err := d.part.validate(); err != nil {
 			return err
 		}
+		// add part to list
+		d.parts = append(d.parts, d.part)
 	}
 	return nil
 }
@@ -290,6 +292,9 @@ func Decode(input io.Reader) (*Part, error) {
 		if err := d.validate(); err != nil {
 			return nil, err
 		}
+	}
+	if d.total > 0 {
+		d.parts[0].Total = d.total
 	}
 	return d.parts[0], nil
 }
