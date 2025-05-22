@@ -1,5 +1,5 @@
 // Package yenc
-// decoder for yenc encoded binaries (yenc.org)
+// Decoder for yenc encoded binaries (yenc.org)
 // modded from github.com/chrisfarms/yenc
 package yenc
 
@@ -18,6 +18,7 @@ import (
 var (
 	Debug1 = false
 	Debug2 = false
+	Debug3 = true
 )
 
 func ParseHeaders(inputBytes []byte) map[string]string {
@@ -85,11 +86,22 @@ func (p *Part) validate() error {
 	return fmt.Errorf("Error in yenc.Part.validate: p.Crc32 not set")
 }
 
-type decoder struct {
+func NewDecoder(in1 []byte, in2 []string) *Decoder {
+	var decoder Decoder
+	if in1 != nil {
+		decoder.Buf = bufio.NewReader(bytes.NewReader(in1))
+	}
+	if in2 != nil {
+		decoder.Dat = in2
+	}
+	return &decoder
+} // end func yenc.NewDecoder(in1, in2)
+
+type Decoder struct {
 	// the buffered input
-	buf *bufio.Reader
+	Buf *bufio.Reader
 	// alternative input as []string
-	dat []string
+	Dat []string
 	// whether we are decoding multipart
 	multipart bool
 	// numer of parts if given
@@ -105,28 +117,28 @@ type decoder struct {
 	awaitingSpecial bool
 }
 
-func (d *decoder) validate() error {
+func (d *Decoder) validate() error {
 	if Debug1 {
-		log.Printf("yenc.decoder.validate() d.part.Number=%d", d.part.Number)
+		log.Printf("yenc.Decoder.validate() d.part.Number=%d", d.part.Number)
 	}
 	if d.crc32 > 0 {
 		if sum := d.crcHash.Sum32(); sum != d.crc32 {
 			return fmt.Errorf("crc check failed expected %x got %x", d.crc32, sum)
 		}
 		if Debug1 {
-			log.Printf("yenc.decoder validated d.part.Number=%d", d.part.Number)
+			log.Printf("yenc.Decoder validated d.part.Number=%d", d.part.Number)
 		}
 		return nil
 	}
-	return fmt.Errorf("Error in yenc.decoder.validate d.crc32 not set")
+	return fmt.Errorf("Error in yenc.Decoder.validate d.crc32 not set")
 }
 
-func (d *decoder) readHeader() (err error) {
+func (d *Decoder) readHeader() (err error) {
 	var s string
 	// find the start of the header
-	if d.buf != nil {
+	if d.Buf != nil {
 		for {
-			s, err = d.buf.ReadString('\n')
+			s, err = d.Buf.ReadString('\n')
 			if err != nil {
 				return err
 			}
@@ -135,8 +147,8 @@ func (d *decoder) readHeader() (err error) {
 			}
 		}
 	} else
-	if d.dat != nil {
-		for _, s = range d.dat { // s is a line
+	if d.Dat != nil {
+		for _, s = range d.Dat { // s is a line
 			if len(s) >= 7 && s[:7] == "=ybegin" {
 				break
 			}
@@ -169,12 +181,12 @@ func (d *decoder) readHeader() (err error) {
 	return nil
 }
 
-func (d *decoder) readPartHeader() (err error) {
+func (d *Decoder) readPartHeader() (err error) {
 	var s string
 	// find the start of the header
-	if d.buf != nil {
+	if d.Buf != nil {
 		for {
-			s, err = d.buf.ReadString('\n')
+			s, err = d.Buf.ReadString('\n')
 			if err != nil {
 				return err
 			}
@@ -183,8 +195,8 @@ func (d *decoder) readPartHeader() (err error) {
 			}
 		}
 	} else
-	if d.dat != nil {
-		for _, s = range d.dat { // s is a line
+	if d.Dat != nil {
+		for _, s = range d.Dat { // s is a line
 			if len(s) >= 6 && s[:6] == "=ypart" {
 				break
 			}
@@ -207,7 +219,7 @@ func (d *decoder) readPartHeader() (err error) {
 	return nil
 }
 
-func (d *decoder) parseTrailer(line string) error {
+func (d *Decoder) parseTrailer(line string) error {
 	// split on space for headers
 	parts := strings.Split(line, " ")
 	for i, _ := range parts {
@@ -236,7 +248,7 @@ func (d *decoder) parseTrailer(line string) error {
 	return nil
 }
 
-func (d *decoder) decode(line []byte) []byte {
+func (d *Decoder) decode(line []byte) []byte {
 	i, j := 0, 0
 	for ; i < len(line); i, j = i+1, j+1 {
 		// escaped chars yenc42+yenc64
@@ -258,7 +270,7 @@ func (d *decoder) decode(line []byte) []byte {
 	return line[:len(line)-(i-j)]
 }
 
-func (d *decoder) readBody() error {
+func (d *Decoder) readBody() error {
 	// ready the part body
 	d.part.Body = make([]byte, 0)
 	// reset special
@@ -266,11 +278,11 @@ func (d *decoder) readBody() error {
 	// setup crc hash
 	d.part.crcHash = crc32.NewIEEE()
 	// each line
-	if d.buf != nil {
+	if d.Buf != nil {
 		for {
-			line, err := d.buf.ReadBytes('\n')
+			line, err := d.Buf.ReadBytes('\n')
 			if err != nil {
-				log.Printf("Error in yenc.decoder.readBody d.buf.ReadBytes err='%v'", err)
+				log.Printf("Error in yenc.Decoder.readBody d.Buf.ReadBytes err='%v'", err)
 				return err
 			}
 			// strip linefeeds (some use CRLF some LF)
@@ -278,7 +290,7 @@ func (d *decoder) readBody() error {
 			// check for =yend
 			if len(line) >= 5 && string(line[:5]) == "=yend" {
 				if Debug1 {
-					log.Printf("yenc.decoder d.buf =yend d.part.Body=%d", len(d.part.Body))
+					log.Printf("yenc.Decoder d.Buf =yend d.part.Body=%d", len(d.part.Body))
 				}
 				return d.parseTrailer(string(line))
 			}
@@ -291,11 +303,11 @@ func (d *decoder) readBody() error {
 			d.part.Body = append(d.part.Body, b...)
 		}
 	} else
-	if d.dat != nil {
+	if d.Dat != nil {
 		if Debug1 {
-			log.Printf("yenc.decoder readBody lines d.dat=%d", len(d.dat))
+			log.Printf("yenc.Decoder readBody lines d.Dat=%d", len(d.Dat))
 		}
-		for i, line := range d.dat {
+		for i, line := range d.Dat {
 			if len(line) == 0 {
 				continue
 			}
@@ -305,14 +317,14 @@ func (d *decoder) readBody() error {
 			}
 			if len(line) >= 5 && string(line[:5]) == "=yend" {
 				if Debug2 {
-					log.Printf("yenc.decoder d.dat =yend d.part.Body=%d", len(d.part.Body))
+					log.Printf("yenc.Decoder d.Dat =yend d.part.Body=%d", len(d.part.Body))
 				}
 				return d.parseTrailer(line)
 			}
 			// decode
 			b := d.decode([]byte(line))
 			if Debug2 {
-				log.Printf("yenc.decoder readBody i=%d/d.dat=%d len(line)=%d got len(b)=%d", i, len(d.dat), len(line), len(b))
+				log.Printf("yenc.Decoder readBody i=%d/d.Dat=%d len(line)=%d got len(b)=%d", i, len(d.Dat), len(line), len(b))
 			}
 			// update hashs
 			d.part.crcHash.Write(b)
@@ -320,62 +332,72 @@ func (d *decoder) readBody() error {
 			// decode
 			d.part.Body = append(d.part.Body, b...)
 		}
-
 	}
-	return fmt.Errorf("Error unexpected EOF in yenc.decoder.readBody")
+	return fmt.Errorf("Error unexpected EOF in yenc.Decoder.readBody")
 }
 
-func (d *decoder) run() error {
+func (d *Decoder) run() error {
 	// init hash
 	d.crcHash = crc32.NewIEEE()
 	// for each part
 	for {
 		// create a part
 		d.part = new(Part)
+
 		// read the header
 		if err := d.readHeader(); err != nil {
+			log.Printf("Debug readHeader err='%v'", err)
 			return err
 		}
 		if Debug2 {
-			log.Printf("yenc.decoder.run: #1 done d.readHeader() @Number=%d", d.part.Number)
+			log.Printf("yenc.Decoder.run: #1 done d.readHeader() @Number=%d", d.part.Number)
 		}
 
 		// read part header if available
 		if d.multipart {
 			if err := d.readPartHeader(); err != nil {
+				log.Printf("Debug readPartHeader err='%v'", err)
 				return err
 			}
 		}
 		if Debug2 {
-			log.Printf("yenc.decoder.run: #2 done d.readPartHeader @Number=%d", d.part.Number)
+			log.Printf("yenc.Decoder.run: #2 done d.readPartHeader @Number=%d", d.part.Number)
 		}
+
 		// decode the part body
 		if err := d.readBody(); err != nil {
+			log.Printf("Debug readBody err='%v'", err)
 			return err
 		}
 		if Debug2 {
-			log.Printf("yenc.decoder.run: #3 done d.readBody @Number=%d", d.part.Number)
+			log.Printf("yenc.Decoder.run: #3 done d.readBody @Number=%d", d.part.Number)
+		}
+
+		// validate part
+		if err := d.part.validate(); err != nil {
+			log.Printf("Error yenc.Decoder.run: validate @Number=%d err='%v'", d.part.Number, err)
+			return err
 		}
 
 		// add part to list
 		d.parts = append(d.parts, d.part)
 
-		// validate part
-		if err := d.part.validate(); err != nil {
-			log.Printf("Error yenc.decoder.run: validate @Number=%d err='%v'", d.part.Number, err)
-			return err
+		if Debug3 {
+			log.Printf("yenc.Decoder.run: #4 done d.validate @Number=%d parts=%d", d.part.Number, len(d.parts))
 		}
 
-		if Debug2 {
-			log.Printf("yenc.decoder.run: #4 done d.validate @Number=%d parts=%d", d.part.Number, len(d.parts))
+		if d.Dat != nil {
+			break
 		}
 	}
 	return nil
 }
 
 // return a single part from yenc data
-func DecodeSlice(input []string) (part *Part, err error) {
-	d := &decoder{dat: input}
+// func DecodeSlice(input []string) (part *Part, err error) {
+
+func (d *Decoder) DecodeSlice() (part *Part, err error) {
+	//d := &Decoder{dat: input}
 	if err = d.run(); err != nil && err != io.EOF {
 		log.Printf("Error in yenc.DecodeSlice #1 err='%v'", err)
 		return nil, err
@@ -401,11 +423,14 @@ func DecodeSlice(input []string) (part *Part, err error) {
 	if Debug1 {
 		log.Printf("OK yenc.DecodeSlice return yPart.Number=%d Body=%d parts=%d", d.parts[0].Number, len(d.parts[0].Body), len(d.parts))
 	}
-	return d.parts[0], nil
+	part = d.parts[0]
+	d.parts = nil
+	d = nil
+	return part, nil
 } // end func DecodeSlice
 
-func Decode(input io.Reader) (part *Part, err error) {
-	d := &decoder{buf: bufio.NewReader(input)}
+func (d *Decoder) Decode() (part *Part, err error) {
+	//d := &Decoder{buf: bufio.NewReader(input)}
 	if err = d.run(); err != nil && err != io.EOF {
 		log.Printf("Error in yenc.Decode #1 err='%v'", err)
 		return nil, err
@@ -431,5 +456,8 @@ func Decode(input io.Reader) (part *Part, err error) {
 	if Debug1 {
 		log.Printf("OK yenc.Decode return yPart.Number=%d Body=%d parts=%d", d.parts[0].Number, len(d.parts[0].Body), len(d.parts))
 	}
-	return d.parts[0], nil
+	part = d.parts[0]
+	d.parts = nil
+	d = nil
+	return part, nil
 } // end func Decode
