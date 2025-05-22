@@ -92,7 +92,7 @@ type Decoder struct {
 	// the buffered input
 	Buf *bufio.Reader
 	// alternative input as []string
-	Dat []string
+	Dat []*string
 	// whether we are decoding multipart
 	multipart bool
 	// numer of parts if given
@@ -110,7 +110,9 @@ type Decoder struct {
 
 // you should supply only one: ior or in1 or in2!
 // toCheck should be <= 0 if unknown or any number but mostly only 1!
-func NewDecoder(ior io.Reader, in1 []byte, in2 []string, toCheck int64) *Decoder {
+// if 'in2 []string' is supplied:
+//   you have to set 'toCheck' or it will not get an EOF and will not release!
+func NewDecoder(ior io.Reader, in1 []byte, in2 []*string, toCheck int64) *Decoder {
 	var decoder Decoder
 	if ior != nil {
 		decoder.Buf = bufio.NewReader(ior)
@@ -156,8 +158,9 @@ func (d *Decoder) readHeader() (err error) {
 		}
 	} else
 	if d.Dat != nil {
-		for _, s = range d.Dat { // s is a line
-			if len(s) >= 7 && s[:7] == "=ybegin" {
+		for _, sptr := range d.Dat { // s is a line
+			if len(*sptr) >= 7 && string(*sptr)[:7] == "=ybegin" {
+				s = *sptr
 				break
 			}
 		}
@@ -204,8 +207,9 @@ func (d *Decoder) readPartHeader() (err error) {
 		}
 	} else
 	if d.Dat != nil {
-		for _, s = range d.Dat { // s is a line
-			if len(s) >= 6 && s[:6] == "=ypart" {
+		for _, sptr := range d.Dat { // s is a line
+			if len(*sptr) >= 6 && string(*sptr)[:6] == "=ypart" {
+				s = *sptr
 				break
 			}
 		}
@@ -316,23 +320,23 @@ func (d *Decoder) readBody() error {
 			log.Printf("yenc.Decoder readBody lines d.Dat=%d", len(d.Dat))
 		}
 		for i, line := range d.Dat {
-			if len(line) == 0 {
+			if len(*line) == 0 {
 				continue
 			}
 			// Skip yenc headers or metadata lines
-			if strings.HasPrefix(line, "=ybegin") || strings.HasPrefix(line, "=ypart") {
+			if strings.HasPrefix(*line, "=ybegin") || strings.HasPrefix(*line, "=ypart") {
 				continue
 			}
-			if len(line) >= 5 && string(line[:5]) == "=yend" {
+			if len(*line) >= 5 && string(*line)[:5] == "=yend" {
 				if Debug2 {
 					log.Printf("yenc.Decoder d.Dat =yend d.part.Body=%d", len(d.part.Body))
 				}
-				return d.parseTrailer(line)
+				return d.parseTrailer(*line)
 			}
 			// decode
-			b := d.decode([]byte(line))
+			b := d.decode([]byte(*line))
 			if Debug2 {
-				log.Printf("yenc.Decoder readBody i=%d/d.Dat=%d len(line)=%d got len(b)=%d", i, len(d.Dat), len(line), len(b))
+				log.Printf("yenc.Decoder readBody i=%d/d.Dat=%d len(line)=%d got len(b)=%d", i, len(d.Dat), len(*line), len(b))
 			}
 			// update hashs
 			d.part.crcHash.Write(b)
