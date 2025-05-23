@@ -10,7 +10,8 @@ func TestSinglepartDecode(t *testing.T) {
 	if err != nil {
 		t.Fatal("could not open singlepart_test.yenc for testing")
 	}
-	_, err = Decode(f)
+	decoder := NewDecoder(f, nil, nil, -1)
+	_, err = decoder.Decode()
 	if err != nil {
 		t.Fatal("expected to decode: " + err.Error())
 	}
@@ -21,7 +22,8 @@ func TestMultipartDecode(t *testing.T) {
 	if err != nil {
 		t.Fatal("could not open multipart_test.yenc for testing")
 	}
-	part, err := Decode(f)
+	decoder := NewDecoder(f, nil, nil, -1)
+	part, err := decoder.Decode()
 	if err != nil {
 		t.Errorf("expected to decode: " + err.Error())
 	}
