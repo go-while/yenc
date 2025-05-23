@@ -57,8 +57,6 @@ type Part struct {
 	Name string
 	// line length of part
 	cols int
-	// numer of parts if given
-	Total int
 	// crc check for this part
 	Crc32   uint32
 	crcHash hash.Hash32
@@ -374,19 +372,16 @@ func (d *Decoder) run() error {
 		if Debug2 {
 			log.Printf("yenc.Decoder.run: #1 done d.readHeader() @Number=%d", d.part.Number)
 		}
+		if d.part.Name == "" {
+			return fmt.Errorf("ERROR in yenc.Decoder.run() empty Name field fn='%s' part=%d", d.part.Name, d.part.Number)
+		}
 		if processed[d.part.Name] == nil {
 			processed[d.part.Name] = make(map[int]bool, d.total)
 		}
 		if processed[d.part.Name][d.part.Number] {
 			return fmt.Errorf("ERROR in yenc.Decoder.run() already processed fn='%s' part=%d", d.part.Name, d.part.Number)
 		}
-		processed[d.part.Name][d.part.Number] = true
-		/*
-		if slices.Contains(processed[d.part.Name], d.part.Number) {
-			return fmt.Errorf("ERROR in yenc.Decoder.run() already processed fn='%s' part=%d", d.part.Name, d.part.Number)
-		}
-		processed[d.part.Name] = append(processed[d.part.Name], d.part.Number)
-		*/
+		processed[d.part.Name][d.part.Number] = true // set it here or later? should not matter as we return on any err
 
 		//log.Printf("yenc.Decoder.run: process #1 d.part.Number=%d", d.part.Number)
 
@@ -457,9 +452,6 @@ func (d *Decoder) DecodeSlice() (part *Part, err error) {
 			return nil, err
 		}
 	}
-	if d.total > 0 {
-		d.parts[0].Total = d.total
-	}
 	if Debug3 {
 		log.Printf("OK yenc.DecodeSlice return yPart.Number=%d Body=%d parts=%d", d.parts[0].Number, len(d.parts[0].Body), len(d.parts))
 	}
@@ -469,12 +461,10 @@ func (d *Decoder) DecodeSlice() (part *Part, err error) {
 func (d *Decoder) Decode() (part *Part, err error) {
 	//d := &Decoder{buf: bufio.NewReader(input)}
 	if err = d.run(); err != nil && err != io.EOF {
-		log.Printf("Error in yenc.Decode #1 err='%v'", err)
-		return nil, err
+		return nil, fmt.Errorf("Error in yenc.Decode #1 err='%v'", err)
 	}
 	if len(d.parts) == 0 {
-		log.Printf("Error in yenc.Decode #2 'len(d.parts) == 0' err='%#v'", err)
-		return nil, fmt.Errorf("no yenc parts found")
+		return nil, fmt.Errorf("Error in yenc.Decode #2 'len(d.parts) == 0' err='%#v'", err)
 	}
 	// validate multipart only if all parts are present
 	//if !d.multipart || len(d.parts) == d.parts[len(d.parts)-1].Number { //  ?????????
@@ -483,12 +473,8 @@ func (d *Decoder) Decode() (part *Part, err error) {
 			log.Printf("yenc.Decode d.validate() d.multipart=%t parts=%d", d.multipart, len(d.parts))
 		}
 		if err := d.validate(); err != nil {
-			log.Printf("Error in yenc.Decode #3 d.validate err='%v'", err)
-			return nil, err
+			return nil, fmt.Errorf("Error in yenc.Decode #3 d.validate err='%v'", err)
 		}
-	}
-	if d.total > 0 {
-		d.parts[0].Total = d.total
 	}
 	if Debug3 {
 		log.Printf("OK yenc.Decode return yPart.Number=%d Body=%d parts=%d", d.parts[0].Number, len(d.parts[0].Body), len(d.parts))
