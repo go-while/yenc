@@ -10,7 +10,6 @@ import (
 	"hash"
 	"hash/crc32"
 	"io"
-	"slices"
 	"strconv"
 	"strings"
 	"log"
@@ -251,7 +250,7 @@ func (d *Decoder) parseTrailer(line string) error {
 		case "crc32":
 			if crc64, err := strconv.ParseUint(kv[1], 16, 64); err == nil {
 				d.Fullcrc32 = uint32(crc64)
-				d.part.Crc32 = uint32(crc64)
+				d.part.Crc32 = uint32(crc64) // why it has not been set by default... i dont know
 			}
 		case "part":
 			partNum, _ := strconv.Atoi(kv[1])
@@ -354,9 +353,9 @@ func (d *Decoder) readBody() error {
 func (d *Decoder) run() error {
 	// init hash
 	d.crcHash = crc32.NewIEEE()
-	// for each part
 	var checked int64 = 0
-	processed := make(map[string][]int)
+	processed := make(map[string]map[int]bool)
+	// for each part
 	for {
 		// create a part
 		d.part = new(Part)
@@ -375,12 +374,21 @@ func (d *Decoder) run() error {
 		if Debug2 {
 			log.Printf("yenc.Decoder.run: #1 done d.readHeader() @Number=%d", d.part.Number)
 		}
+		if processed[d.part.Name] == nil {
+			processed[d.part.Name] = make(map[int]bool, d.total)
+		}
+		if processed[d.part.Name][d.part.Number] {
+			return fmt.Errorf("ERROR in yenc.Decoder.run() already processed fn='%s' part=%d", d.part.Name, d.part.Number)
+		}
+		processed[d.part.Name][d.part.Number] = true
+		/*
 		if slices.Contains(processed[d.part.Name], d.part.Number) {
 			return fmt.Errorf("ERROR in yenc.Decoder.run() already processed fn='%s' part=%d", d.part.Name, d.part.Number)
 		}
 		processed[d.part.Name] = append(processed[d.part.Name], d.part.Number)
+		*/
 
-		log.Printf("process #1 d.part.Number=%d", d.part.Number)
+		//log.Printf("yenc.Decoder.run: process #1 d.part.Number=%d", d.part.Number)
 
 		// read part header if available
 		if d.multipart {
@@ -392,7 +400,7 @@ func (d *Decoder) run() error {
 		if Debug2 {
 			log.Printf("yenc.Decoder.run: #2 done d.readPartHeader @Number=%d", d.part.Number)
 		}
-		log.Printf("process #2 d.part.Number=%d", d.part.Number)
+		//log.Printf("yenc.Decoder.run: process #2 d.part.Number=%d", d.part.Number)
 
 		// decode the part body
 		if err := d.readBody(); err != nil {
@@ -402,14 +410,14 @@ func (d *Decoder) run() error {
 		if Debug2 {
 			log.Printf("yenc.Decoder.run: #3 done d.readBody @Number=%d", d.part.Number)
 		}
-		log.Printf("process #3 d.part.Number=%d", d.part.Number)
+		//log.Printf("yenc.Decoder.run: process #3 d.part.Number=%d", d.part.Number)
 
 		// validate part
 		if err := d.part.validate(); err != nil {
 			log.Printf("Error yenc.Decoder.run: validate @Number=%d err='%v' d.part='%#v'", d.part.Number, err, d.part)
 			return err
 		}
-		log.Printf("process #4 d.part.Number=%d", d.part.Number)
+		//log.Printf("yenc.Decoder.run: process #4 d.part.Number=%d", d.part.Number)
 
 		// add part to list
 		d.parts = append(d.parts, d.part)
@@ -422,7 +430,7 @@ func (d *Decoder) run() error {
 		if d.toCheck > 0 && checked == d.toCheck {
 			break
 		}
-		log.Printf("processed d.part.Number=%d", d.part.Number)
+		//log.Printf("processed d.part.Number=%d", d.part.Number)
 	}
 	return nil
 } // end func d.run()
