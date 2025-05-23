@@ -10,6 +10,7 @@ import (
 	"hash"
 	"hash/crc32"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 	"log"
@@ -19,6 +20,7 @@ var (
 	Debug1 = false
 	Debug2 = false
 	Debug3 = false
+	DebugThis11 = false
 )
 
 func ParseHeaders(inputBytes []byte) map[string]string {
@@ -102,7 +104,7 @@ type Decoder struct {
 	// active part
 	part *Part
 	// overall crc check
-	crc32   uint32
+	Fullcrc32   uint32
 	crcHash hash.Hash32
 	// are we waiting for an escaped char
 	awaitingSpecial bool
@@ -131,16 +133,16 @@ func (d *Decoder) validate() error {
 	if Debug1 {
 		log.Printf("yenc.Decoder.validate() d.part.Number=%d", d.part.Number)
 	}
-	if d.crc32 > 0 {
-		if sum := d.crcHash.Sum32(); sum != d.crc32 {
-			return fmt.Errorf("crc check failed expected %x got %x", d.crc32, sum)
+	if d.Fullcrc32 > 0 {
+		if sum := d.crcHash.Sum32(); sum != d.Fullcrc32 {
+			return fmt.Errorf("crc check failed expected %x got %x", d.Fullcrc32, sum)
 		}
 		if Debug1 {
 			log.Printf("yenc.Decoder validated d.part.Number=%d", d.part.Number)
 		}
 		return nil
 	}
-	return fmt.Errorf("Error in yenc.Decoder.validate d.crc32 not set")
+	return fmt.Errorf("Error in yenc.Decoder.validate d.Fullcrc32 not set")
 }
 
 func (d *Decoder) readHeader() (err error) {
@@ -248,7 +250,8 @@ func (d *Decoder) parseTrailer(line string) error {
 			}
 		case "crc32":
 			if crc64, err := strconv.ParseUint(kv[1], 16, 64); err == nil {
-				d.crc32 = uint32(crc64)
+				d.Fullcrc32 = uint32(crc64)
+				d.part.Crc32 = uint32(crc64)
 			}
 		case "part":
 			partNum, _ := strconv.Atoi(kv[1])
@@ -353,18 +356,31 @@ func (d *Decoder) run() error {
 	d.crcHash = crc32.NewIEEE()
 	// for each part
 	var checked int64 = 0
+	processed := make(map[string][]int)
 	for {
 		// create a part
 		d.part = new(Part)
 
 		// read the header
 		if err := d.readHeader(); err != nil {
-			log.Printf("Debug readHeader err='%v'", err)
+			if DebugThis11 {
+				// when reading from io.reader or with []bytes
+				// ^ we use a buffer which clears out while reading
+				// : but with []*string we won't hit an io.EOF while iterating over and over again!
+				// ! results in oom quickly as it generates new parts and fills them all with the same!
+				log.Printf("Debug readHeader err='%v'", err)
+			}
 			return err
 		}
 		if Debug2 {
 			log.Printf("yenc.Decoder.run: #1 done d.readHeader() @Number=%d", d.part.Number)
 		}
+		if slices.Contains(processed[d.part.Name], d.part.Number) {
+			return fmt.Errorf("ERROR in yenc.Decoder.run() already processed fn='%s' part=%d", d.part.Name, d.part.Number)
+		}
+		processed[d.part.Name] = append(processed[d.part.Name], d.part.Number)
+
+		log.Printf("process #1 d.part.Number=%d", d.part.Number)
 
 		// read part header if available
 		if d.multipart {
@@ -376,6 +392,7 @@ func (d *Decoder) run() error {
 		if Debug2 {
 			log.Printf("yenc.Decoder.run: #2 done d.readPartHeader @Number=%d", d.part.Number)
 		}
+		log.Printf("process #2 d.part.Number=%d", d.part.Number)
 
 		// decode the part body
 		if err := d.readBody(); err != nil {
@@ -385,12 +402,14 @@ func (d *Decoder) run() error {
 		if Debug2 {
 			log.Printf("yenc.Decoder.run: #3 done d.readBody @Number=%d", d.part.Number)
 		}
+		log.Printf("process #3 d.part.Number=%d", d.part.Number)
 
 		// validate part
 		if err := d.part.validate(); err != nil {
-			log.Printf("Error yenc.Decoder.run: validate @Number=%d err='%v'", d.part.Number, err)
+			log.Printf("Error yenc.Decoder.run: validate @Number=%d err='%v' d.part='%#v'", d.part.Number, err, d.part)
 			return err
 		}
+		log.Printf("process #4 d.part.Number=%d", d.part.Number)
 
 		// add part to list
 		d.parts = append(d.parts, d.part)
@@ -403,6 +422,7 @@ func (d *Decoder) run() error {
 		if d.toCheck > 0 && checked == d.toCheck {
 			break
 		}
+		log.Printf("processed d.part.Number=%d", d.part.Number)
 	}
 	return nil
 } // end func d.run()
