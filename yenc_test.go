@@ -13,7 +13,7 @@ func TestSinglepartDecode(t *testing.T) {
 	decoder := NewDecoder(f, nil, nil, -1)
 	_, err = decoder.Decode()
 	if err != nil {
-		t.Fatal("expected to decode: " + err.Error())
+		t.Fatalf("expected to decode: %v", err.Error())
 	}
 }
 
@@ -25,7 +25,7 @@ func TestMultipartDecode(t *testing.T) {
 	decoder := NewDecoder(f, nil, nil, -1)
 	part, err := decoder.Decode()
 	if err != nil {
-		t.Errorf("expected to decode: " + err.Error())
+		t.Errorf("expected to decode: %v", err.Error())
 	}
 	if part.Name != "joystick.jpg" {
 		t.Errorf("expected part name %s got %s", "joystick.jpg", part.Name)
